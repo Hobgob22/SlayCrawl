@@ -2,7 +2,7 @@ from redis import asyncio as aioredis
 from typing import Optional, Any, Dict
 import json
 import os
-from datetime import timedelta, datetime
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,15 +28,7 @@ class RedisCache:
         self.default_expiry = int(os.getenv("CACHE_EXPIRY", 3600))  # 1 hour default
     
     async def get_cached_data(self, key: str) -> Optional[Dict[str, Any]]:
-        """
-        Retrieve cached data for a given key.
-        
-        Args:
-            key: Cache key to look up
-            
-        Returns:
-            Optional[Dict]: Cached data if found, None otherwise
-        """
+        """Retrieve cached data for a given key."""
         try:
             data = await self.redis.get(f"scrape:{key}")
             return json.loads(data) if data else None
@@ -45,17 +37,7 @@ class RedisCache:
             return None
     
     async def cache_data(self, key: str, data: Dict[str, Any], expiry: Optional[int] = None) -> bool:
-        """
-        Cache data with the given key.
-        
-        Args:
-            key: Cache key
-            data: Data to cache
-            expiry: Optional custom expiry time in seconds
-            
-        Returns:
-            bool: True if caching was successful
-        """
+        """Cache data with the given key."""
         try:
             json_data = json.dumps(data, cls=DateTimeEncoder)
             await self.redis.setex(
@@ -69,15 +51,7 @@ class RedisCache:
             return False
     
     async def invalidate(self, key: str) -> bool:
-        """
-        Remove data from cache.
-        
-        Args:
-            key: Cache key to invalidate
-            
-        Returns:
-            bool: True if invalidation was successful
-        """
+        """Remove data from cache."""
         try:
             await self.redis.delete(f"scrape:{key}")
             return True
@@ -85,23 +59,8 @@ class RedisCache:
             logger.error(f"Redis delete error: {str(e)}")
             return False
     
-    async def get_or_set(
-        self,
-        key: str,
-        data_generator: callable,
-        expiry: Optional[int] = None
-    ) -> Dict[str, Any]:
-        """
-        Get data from cache or generate and cache it if not found.
-        
-        Args:
-            key: Cache key
-            data_generator: Async function to generate data if not in cache
-            expiry: Optional custom expiry time in seconds
-            
-        Returns:
-            Dict: The cached or newly generated data
-        """
+    async def get_or_set(self, key: str, data_generator: callable, expiry: Optional[int] = None) -> Dict[str, Any]:
+        """Get data from cache or generate+cache it if not found."""
         cached_data = await self.get_cached_data(key)
         if cached_data:
             return cached_data
@@ -115,4 +74,4 @@ class RedisCache:
         await self.redis.close()
 
 # Create global cache instance
-cache = RedisCache() 
+cache = RedisCache()

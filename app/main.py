@@ -4,14 +4,18 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.openapi.utils import get_openapi
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select
 from datetime import datetime
 from pydantic import ValidationError, BaseModel
 import os
 import logging
-import redis.asyncio as redis
 
-from .models import ScrapeRequest, ScrapedData, APIKeyRequest, APIKey
+from .models import (
+    ScrapeRequest,
+    ScrapedData,
+    APIKeyRequest,
+    APIKey
+)
 from .scraper import Scraper
 from .cache import cache
 from .database import (
@@ -20,6 +24,7 @@ from .database import (
     ScrapedDataModel,
     init_db
 )
+
 import json
 
 # Health check response model
@@ -29,14 +34,14 @@ class HealthCheck(BaseModel):
     redis_status: str
     database_status: str
 
-# Configure logging
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
 app = FastAPI(
     title="SlayCrawl API",
     description="""
     A modern, async web scraping API built with FastAPI, Redis, and Playwright.
-    Provides powerful web scraping capabilities with JavaScript rendering support,
+    Provides powerful web scraping capabilities with JS rendering support,
     caching, and customizable data extraction.
     """,
     version="1.0.0"
@@ -61,12 +66,18 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         }
     )
 
+# Serve static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and cache on startup."""
     await init_db()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close cache connection on shutdown."""
+    await cache.close()
 
 @app.get("/health", response_model=HealthCheck, tags=["Health"])
 async def health_check(session: AsyncSession = Depends(get_session)):
@@ -75,7 +86,7 @@ async def health_check(session: AsyncSession = Depends(get_session)):
     Checks database and Redis connectivity.
     """
     try:
-        # Test database connection
+        # Test database
         await session.execute(select(1))
         db_status = "healthy"
     except Exception as e:
@@ -83,44 +94,53 @@ async def health_check(session: AsyncSession = Depends(get_session)):
         db_status = "unhealthy"
 
     try:
-        # Test Redis connection using the cache instance
+        # Test Redis connection
         await cache.redis.ping()
         redis_status = "healthy"
     except Exception as e:
         logger.error(f"Redis health check failed: {str(e)}")
         redis_status = "unhealthy"
 
-    # Overall status is healthy only if all components are healthy
-    overall_status = "healthy" if all(status == "healthy" for status in [db_status, redis_status]) else "unhealthy"
+    overall_status = "healthy" if db_status == "healthy" and redis_status == "healthy" else "unhealthy"
 
     return HealthCheck(
         status=overall_status,
-        version="1.0.0",  # This should match your app version
+        version="1.0.0",
         redis_status=redis_status,
         database_status=db_status
     )
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Close cache connection on shutdown."""
-    await cache.close()
-
+# API Key validation dependency
 async def get_api_key(
-    api_key: str,
+    request: Request,
     session: AsyncSession = Depends(get_session)
 ) -> str:
-    """Validate API key and update last used timestamp."""
+    """
+    Validate API Key unless request is from the local web UI (x-webui-token).
+    """
+    # If coming from the local UI, skip requirement
+    if request.headers.get("x-webui-token") == "true":
+        return "browser_ui"
+
+    # Otherwise, read from X-API-Key
+    api_key = request.headers.get("X-API-Key")
+    if not api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="API key is required (use 'X-API-Key' header)."
+        )
+
+    # Validate
     stmt = select(APIKeyModel).where(APIKeyModel.key == api_key)
     result = await session.execute(stmt)
     key_model = result.scalar_one_or_none()
-    
     if not key_model:
         raise HTTPException(status_code=401, detail="Invalid API key")
     
-    # Update last used timestamp
+    # Update last_used
     key_model.last_used = datetime.utcnow()
     await session.commit()
-    
+
     return api_key
 
 @app.get("/", response_class=HTMLResponse, tags=["UI"])
@@ -198,81 +218,45 @@ async def delete_key(
 async def scrape_url(
     request: ScrapeRequest,
     session: AsyncSession = Depends(get_session),
-    api_key: str | None = None,
-    http_request: Request = None
+    api_key: str = Depends(get_api_key)
 ):
     """
     Scrape a webpage with optional JavaScript rendering.
     Uses Redis cache to avoid re-scraping recently accessed pages.
     """
-    logger.info(f"Received scrape request for URL: {request.url}")
-    logger.debug(f"Full request data: {request.dict()}")
+    logger.info(f"Scrape request for URL: {request.url}")
     
-    # Check if request is from web UI
-    is_web_ui = http_request and http_request.headers.get("x-webui-token") == "true"
-    
-    # For non-web UI requests, require and validate API key
-    if not is_web_ui:
-        if not api_key:
-            raise HTTPException(
-                status_code=401,
-                detail="API key is required for programmatic access. Please provide your API key in the X-API-Key header."
-            )
-        
-        # Validate API key for programmatic access
-        stmt = select(APIKeyModel).where(APIKeyModel.key == api_key)
-        result = await session.execute(stmt)
-        key_model = result.scalar_one_or_none()
-        
-        if not key_model:
-            raise HTTPException(status_code=401, detail="Invalid API key")
-        
-        # Update last used timestamp
-        key_model.last_used = datetime.utcnow()
-        await session.commit()
-    
-    try:
-        url = str(request.url)
-        logger.info(f"Validated URL: {url}")
-        
-        # Try to get from cache first
-        async def scrape_and_store():
-            logger.info("Cache miss - starting scrape operation")
-            scraper = Scraper()
-            try:
-                result = await scraper.scrape_page(url, request.render_js)
-                logger.info("Scrape completed successfully")
-                await scraper.close()
-                
-                # Store in database
-                scraped_data = ScrapedDataModel(
-                    url=url,
-                    title=result.title,
-                    content=result.content,
-                    metadata=json.dumps(result.metadata),
-                    timestamp=datetime.utcnow(),
-                    cached=f"scrape:{url}"
-                )
-                session.add(scraped_data)
-                await session.commit()
-                logger.info("Scrape result stored in database")
-                
-                return result.dict()
-            except Exception as e:
-                logger.error(f"Error during scraping: {str(e)}")
-                raise
-        
-        # Use cache with fallback to scraping
+    url = str(request.url)
+
+    async def scrape_and_store():
+        logger.info("Cache miss - starting scrape operation")
+        scraper = Scraper()
         try:
-            data = await cache.get_or_set(url, scrape_and_store)
-            return ScrapedData(**data)
-        except Exception as e:
-            logger.error(f"Error in cache operation or scraping: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
+            result = await scraper.scrape_page(url, request.render_js)
+            logger.info("Scrape completed successfully")
+            await scraper.close()
             
-    except ValidationError as e:
-        logger.error(f"Validation error: {str(e)}")
-        raise HTTPException(status_code=422, detail=str(e))
+            # Save in DB
+            data_model = ScrapedDataModel(
+                url=url,
+                title=result.title,
+                content=result.content,
+                page_metadata=json.dumps(result.metadata),
+                timestamp=datetime.utcnow(),
+                cached=f"scrape:{url}"
+            )
+            session.add(data_model)
+            await session.commit()
+            
+            return result.dict()
+        except Exception as e:
+            logger.error(f"Error during scraping: {str(e)}")
+            raise
+
+    # Use Redis cache first
+    try:
+        data = await cache.get_or_set(url, scrape_and_store)
+        return ScrapedData(**data)
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        logger.error(f"Error in cache operation or scraping: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -2,9 +2,8 @@
 SlayCrawl API - A modern, async web scraping API that slays Firecrawl's vibe
 """
 
-from .models import ScrapeRequest, ScrapedData, CrawlRequest, CrawlJob
+from .models import ScrapeRequest, ScrapedData
 from .scraper import Scraper
-from .worker import Worker
 from .cache import RedisCache
 from .formatter import Formatter
 

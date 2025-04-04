@@ -1,115 +1,145 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web Scraper</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { padding: 20px; }
-        .result { white-space: pre-wrap; }
-        .spinner-border { display: none; }
-        .loading .spinner-border { display: inline-block; }
-        .loading button[type="submit"] { display: none; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Web Scraper</title>
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  />
+  <style>
+    body {
+      padding: 20px;
+    }
+    .result {
+      white-space: pre-wrap;
+    }
+    .spinner-border {
+      display: none;
+    }
+    .loading .spinner-border {
+      display: inline-block;
+    }
+    .loading button[type="submit"] {
+      display: none;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4 rounded">
-            <div class="container-fluid">
-                <span class="navbar-brand">Web Scraper</span>
-                <div class="navbar-nav">
-                    <a class="nav-link active" aria-current="page" href="/">Scraper</a>
-                    <a class="nav-link" href="/static/keys.html">API Keys</a>
-                </div>
-            </div>
-        </nav>
-
-        <div class="card mb-4">
-            <div class="card-body">
-                <h5 class="card-title">Scrape a URL</h5>
-                <form id="scrapeForm">
-                    <div class="mb-3">
-                        <label for="url" class="form-label">URL to scrape</label>
-                        <input type="url" class="form-control" id="url" required>
-                    </div>
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="renderJs">
-                        <label class="form-check-label" for="renderJs">Render JavaScript</label>
-                        <small class="form-text text-muted d-block">Enable for dynamic websites. Note: This may take longer due to anti-bot protection.</small>
-                    </div>
-                    <div class="submit-container">
-                        <button type="submit" class="btn btn-primary">Scrape</button>
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                    </div>
-                </form>
-            </div>
+  <div class="container">
+    <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4 rounded">
+      <div class="container-fluid">
+        <span class="navbar-brand">Web Scraper</span>
+        <div class="navbar-nav">
+          <a class="nav-link active" aria-current="page" href="/">Scraper</a>
+          <a class="nav-link" href="/static/keys.html">API Keys</a>
+          <a class="nav-link" href="/health-ui">Health</a>
         </div>
+      </div>
+    </nav>
 
-        <div class="card mb-4 d-none" id="resultCard">
-            <div class="card-body">
-                <h5 class="card-title">Results</h5>
-                <pre class="result" id="result"></pre>
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Scrape a URL</h5>
+        <form id="scrapeForm">
+          <div class="mb-3">
+            <label for="url" class="form-label">URL to scrape</label>
+            <input type="url" class="form-control" id="url" required />
+          </div>
+          <div class="mb-3 form-check">
+            <input type="checkbox" class="form-check-input" id="renderJs" />
+            <label class="form-check-label" for="renderJs">
+              Render JavaScript
+            </label>
+            <small class="form-text text-muted d-block"
+              >Enable for dynamic websites. May take longer.</small
+            >
+          </div>
+          <div class="submit-container">
+            <button type="submit" class="btn btn-primary">Scrape</button>
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
             </div>
-        </div>
-
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title">API Usage</h5>
-                <p>To use the API programmatically, send a POST request to <code>/scrape</code> with your API key. You can get your API key from the <a href="/static/keys.html">API Keys</a> page.</p>
-                <pre>curl -X POST "http://localhost:8000/scrape" \
-    -H "X-API-Key: your-api-key" \
-    -H "Content-Type: application/json" \
-    -d '{"url": "https://example.com", "render_js": false}'</pre>
-            </div>
-        </div>
+          </div>
+        </form>
+      </div>
     </div>
 
-    <script>
-        document.getElementById('scrapeForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const form = e.target;
-            const url = document.getElementById('url').value;
-            const renderJs = document.getElementById('renderJs').checked;
-            const resultCard = document.getElementById('resultCard');
-            const result = document.getElementById('result');
-            
-            // Show loading state
-            form.classList.add('loading');
-            resultCard.classList.add('d-none');
-            
-            try {
-                const response = await fetch('/scrape', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                        'X-WebUI-Token': 'true'  // Special header to identify web UI requests
-                    },
-                    body: JSON.stringify({
-                        url: url,
-                        render_js: renderJs
-                    })
-                });
-                
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                result.textContent = JSON.stringify(data, null, 2);
-                resultCard.classList.remove('d-none');
-            } catch (error) {
-                alert('Error: ' + error.message);
-            } finally {
-                // Hide loading state
-                form.classList.remove('loading');
-            }
-        });
-    </script>
+    <div class="card mb-4 d-none" id="resultCard">
+      <div class="card-body">
+        <h5 class="card-title">Results</h5>
+        <pre class="result" id="result"></pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title">API Usage</h5>
+        <p>
+          To use the API programmatically, send a POST request to
+          <code>/scrape</code> with your API key. You can get your API key from
+          the
+          <a href="/static/keys.html">API Keys</a> page.
+        </p>
+        <pre>
+curl -X POST "http://localhost:8000/scrape" \
+    -H "X-API-Key: your-api-key" \
+    -H "Content-Type: application/json" \
+    -d '{"url": "https://example.com", "render_js": false}'
+</pre
+        >
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document
+      .getElementById("scrapeForm")
+      .addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const form = e.target;
+        const url = document.getElementById("url").value;
+        const renderJs = document.getElementById("renderJs").checked;
+        const resultCard = document.getElementById("resultCard");
+        const result = document.getElementById("result");
+
+        // Show loading state
+        form.classList.add("loading");
+        resultCard.classList.add("d-none");
+
+        try {
+          const response = await fetch("/scrape", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+              "X-WebUI-Token": "true",
+            },
+            body: JSON.stringify({
+              url: url,
+              render_js: renderJs,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(
+              errorData.detail || `HTTP error! status: ${response.status}`
+            );
+          }
+
+          const data = await response.json();
+          result.textContent = JSON.stringify(data, null, 2);
+          resultCard.classList.remove("d-none");
+        } catch (error) {
+          alert("Error: " + error.message);
+        } finally {
+          // Hide loading state
+          form.classList.remove("loading");
+        }
+      });
+  </script>
 </body>
-</html> 
+</html>

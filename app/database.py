@@ -1,7 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy import Column, String, DateTime, Text, Integer, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, String, DateTime, Text, Integer
 from datetime import datetime
 import os
 from typing import AsyncGenerator
@@ -26,21 +25,9 @@ class ScrapedDataModel(Base):
     url = Column(String, nullable=False, index=True)
     title = Column(String)
     content = Column(Text)
-    page_metadata = Column(Text)  # Renamed from 'metadata' to avoid reserved name
+    page_metadata = Column(Text)  # store metadata as JSON text
     timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
-    cached = Column(String, index=True)  # Cache key for Redis
-
-class CrawlJobModel(Base):
-    """SQLAlchemy model for crawl jobs."""
-    __tablename__ = "crawl_jobs"
-    
-    job_id = Column(String, primary_key=True)
-    status = Column(String, nullable=False)
-    total_pages = Column(Integer, default=0)
-    pages_scraped = Column(Integer, default=0)
-    error = Column(Text)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    cached = Column(String, index=True)  # Cache key in Redis
 
 # Database URL from environment variable with fallback
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///scraper.db")

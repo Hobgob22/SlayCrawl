@@ -17,103 +17,95 @@ A modern, async web scraping API built with FastAPI, Redis, and Playwright. Prov
 
 ## Quick Start
 
-### Prerequisites
-
-- Docker and Docker Compose
-- Git (optional)
-
-### Installation & Setup
-
 1. Clone the repository:
 ```bash
-git clone https://github.com/Hobgob22/slaycrawl.git
-cd slaycrawl
+git clone https://github.com/yourusername/SlayCrawl.git
+cd SlayCrawl
 ```
 
-2. Create your environment file:
+2. Start the application using Docker Compose:
 ```bash
-# Copy the example environment file
-cp .env.example .env
+docker-compose up -d
 ```
 
-3. Start the application:
-```bash
-docker-compose up --build
-```
-
-The application will be available at:
+3. Access the web interface:
 - Main UI: http://localhost:8000
-- Health Dashboard: http://localhost:8000/health-ui
+- Health Check UI: http://localhost:8000/health-ui
 - API Documentation: http://localhost:8000/docs
 
-### API Key Usage
+## Web UI Access
 
-The application uses API keys for authenticating programmatic access to the scraping endpoints. The web UI doesn't require an API key.
+The web interface is freely accessible without any API key requirements. You can use all the features through the web UI without authentication.
 
-1. **Generate an API Key**:
-   ```bash
-   # Create a new API key
-   curl -X POST "http://localhost:8000/api/keys" \
-        -H "Content-Type: application/json" \
-        -d '{"name": "my-app", "description": "API key for my application"}'
-   ```
+## API Access
 
-2. **Use the API Key**:
-   ```bash
-   # Use the key in your requests
-   curl -X POST "http://localhost:8000/scrape" \
-        -H "X-API-Key: YOUR_GENERATED_KEY" \
-        -H "Content-Type: application/json" \
-        -d '{
-          "url": "https://example.com",
-          "render_js": true
-        }'
-   ```
+When using SlayCrawl in your applications or making direct API calls, you'll need to use an API key.
 
-Note: The web interface (accessed through a browser) doesn't require an API key. API keys are only needed for programmatic access.
+### Default Admin API Key
 
-### Development with Hot Reload
+On first startup, SlayCrawl automatically creates a default admin API key. You can find this key in `config/admin_key.txt`. This key has full administrative access and can be used to:
 
-The application is configured with hot reload by default. Any changes you make to the Python files in the `app` directory will automatically trigger a reload of the application.
+- Create additional API keys
+- List all API keys
+- Delete API keys
+- Access all scraping features
 
-To test the hot reload:
-1. Make sure the application is running (`docker-compose up`)
-2. Edit any file in the `app` directory
-3. The application will automatically reload with your changes
+### Using the API
 
-## Testing the API
+To use the API in your applications, include the API key in the `X-API-Key` header:
 
-### 1. Create an API Key
+```python
+import requests
 
-```bash
-curl -X POST "http://localhost:8000/api/keys" \
-     -H "Content-Type: application/json" \
-     -d '{"name": "test-key", "description": "Testing key"}'
+headers = {
+    'X-API-Key': 'your-api-key'
+}
+
+response = requests.post('http://localhost:8000/scrape', 
+    headers=headers,
+    json={
+        'url': 'https://example.com',
+        'render_js': True
+    }
+)
 ```
 
-### 2. Test Web Scraping
+### Creating Additional API Keys
 
-```bash
-# Replace YOUR_API_KEY with the key from step 1
-curl -X POST "http://localhost:8000/scrape" \
-     -H "Content-Type: application/json" \
-     -H "X-API-Key: YOUR_API_KEY" \
-     -d '{
-       "url": "https://example.com",
-       "render_js": true,
-       "output_format": "markdown"
-     }'
+You can create additional API keys using the admin key:
+
+```python
+import requests
+
+headers = {
+    'X-API-Key': 'your-admin-key'
+}
+
+response = requests.post('http://localhost:8000/api/keys',
+    headers=headers,
+    json={
+        'name': 'My API Key',
+        'description': 'Key for my application',
+        'role': 'user'
+    }
+)
 ```
 
-### 3. Check System Health
+## Security Notes
 
-```bash
-# Via curl
-curl http://localhost:8000/health
+1. The default admin key is intended for initial setup and development
+2. For production use, it's recommended to:
+   - Create new API keys for each application
+   - Keep the admin key secure
+   - Use user-level API keys for regular operations
 
-# Or visit the health dashboard
-open http://localhost:8000/health-ui
-```
+## Configuration
+
+The application can be configured using environment variables:
+
+- `DATABASE_URL`: SQLite database location (default: sqlite+aiosqlite:///scraper.db)
+- `REDIS_URL`: Redis connection URL (default: redis://redis:6379)
+- `LOG_LEVEL`: Logging level (default: INFO)
 
 ## Project Structure
 
