@@ -23,7 +23,8 @@ async def get_api_key(
     api_key_header: str = Security(api_key_header)
 ) -> str:
     # Check if request is coming from the browser UI
-    is_browser = "text/html" in request.headers.get("accept", "")
+    accept_header = request.headers.get("accept", "").lower()
+    is_browser = "text/html" in accept_header
     
     # Allow browser requests without API key
     if is_browser:
