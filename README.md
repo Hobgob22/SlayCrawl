@@ -117,27 +117,6 @@ The application can be configured using environment variables:
 - `REDIS_URL`: Redis connection URL (default: redis://redis:6379)
 - `LOG_LEVEL`: Logging level (default: INFO)
 
-## Project Structure
-
-```
-slaycrawl/
-├── app/
-│   ├── static/          # Static files (HTML, CSS, JS)
-│   ├── __init__.py
-│   ├── main.py         # FastAPI application
-│   ├── scraper.py      # Web scraping logic
-│   ├── cache.py        # Redis cache implementation
-│   ├── database.py     # Database models and connection
-│   ├── models.py       # Pydantic models
-│   ├── security.py     # Authentication logic
-│   ├── formatter.py    # Content formatting utilities
-│   └── worker.py       # Background task worker
-├── docker-compose.yml  # Docker compose configuration
-├── Dockerfile         # Docker build instructions
-├── requirements.txt   # Python dependencies
-└── README.md
-```
-
 ## Current Functionality
 
 ### Implemented Features
