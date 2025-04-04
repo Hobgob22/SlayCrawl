@@ -1,6 +1,6 @@
 # SlayCrawl
 
-A modern, async web scraping API built with FastAPI, Redis, and Playwright. Provides powerful web scraping capabilities with JavaScript rendering support, caching, and customizable data extraction.
+An async web scraping API built with FastAPI, Redis, and Playwright. Provides powerful web scraping capabilities with JavaScript rendering support, caching, and customizable data extraction.
 
 ## Features
 
