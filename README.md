@@ -30,11 +30,10 @@ git clone https://github.com/Hobgob22/slaycrawl.git
 cd slaycrawl
 ```
 
-2. Create a `.env` file in the project root:
+2. Create your environment file:
 ```bash
-REDIS_URL=redis://redis:6379
-LOG_LEVEL=INFO
-API_KEY="your_api_key_here"
+# Copy the example environment file
+cp .env.example .env
 ```
 
 3. Start the application:
@@ -46,6 +45,32 @@ The application will be available at:
 - Main UI: http://localhost:8000
 - Health Dashboard: http://localhost:8000/health-ui
 - API Documentation: http://localhost:8000/docs
+
+### API Key Usage
+
+The application uses API keys for authenticating programmatic access to the scraping endpoints. The web UI doesn't require an API key.
+
+1. **Generate an API Key**:
+   ```bash
+   # Create a new API key
+   curl -X POST "http://localhost:8000/api/keys" \
+        -H "Content-Type: application/json" \
+        -d '{"name": "my-app", "description": "API key for my application"}'
+   ```
+
+2. **Use the API Key**:
+   ```bash
+   # Use the key in your requests
+   curl -X POST "http://localhost:8000/scrape" \
+        -H "X-API-Key: YOUR_GENERATED_KEY" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "url": "https://example.com",
+          "render_js": true
+        }'
+   ```
+
+Note: The web interface (accessed through a browser) doesn't require an API key. API keys are only needed for programmatic access.
 
 ### Development with Hot Reload
 
