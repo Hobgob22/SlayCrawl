@@ -19,9 +19,9 @@ class Formatter:
         md = f"# {data.title}\n\n"
         
         # Add metadata section
-        if data.metadata:
+        if data.page_metadata:
             md += "## Metadata\n\n"
-            for key, value in data.metadata.items():
+            for key, value in data.page_metadata.items():
                 if value:  # Only add non-empty metadata
                     md += f"- **{key}**: {value}\n"
             md += "\n"

@@ -1,103 +1,278 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
-from .models import ScrapeRequest, ScrapedData
-from .scraper import Scraper
-from .security import get_api_key
-import sqlite3
-import logging
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.openapi.utils import get_openapi
+from fastapi.exceptions import RequestValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update
 from datetime import datetime
-from typing import List, Optional
-from pydantic import BaseModel
-import uuid
+from pydantic import ValidationError, BaseModel
+import os
+import logging
+import redis.asyncio as redis
 
-class APIKey(BaseModel):
-    key: str
-    name: str
-    description: Optional[str] = None
-    created_at: datetime
-    last_used: Optional[datetime] = None
+from .models import ScrapeRequest, ScrapedData, APIKeyRequest, APIKey
+from .scraper import Scraper
+from .cache import cache
+from .database import (
+    get_session,
+    APIKeyModel,
+    ScrapedDataModel,
+    init_db
+)
+import json
 
-class APIKeyRequest(BaseModel):
-    name: str
-    description: Optional[str] = None
+# Health check response model
+class HealthCheck(BaseModel):
+    status: str
+    version: str
+    redis_status: str
+    database_status: str
 
-app = FastAPI(title="Web Scraper API")
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-
+# Configure logging
 logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="SlayCrawl API",
+    description="""
+    A modern, async web scraping API built with FastAPI, Redis, and Playwright.
+    Provides powerful web scraping capabilities with JavaScript rendering support,
+    caching, and customizable data extraction.
+    """,
+    version="1.0.0"
+)
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors and return detailed error messages"""
+    logger.error(f"Validation error: {exc.errors()}")
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "Validation error",
+            "errors": [
+                {
+                    "loc": error["loc"],
+                    "msg": error["msg"],
+                    "type": error["type"]
+                }
+                for error in exc.errors()
+            ]
+        }
+    )
+
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 @app.on_event("startup")
 async def startup_event():
-    # Initialize database
-    conn = sqlite3.connect('scraper.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS api_keys
-                 (key TEXT PRIMARY KEY, name TEXT, description TEXT,
-                  created_at TIMESTAMP, last_used TIMESTAMP)''')
-    conn.commit()
-    conn.close()
+    """Initialize database and cache on startup."""
+    await init_db()
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/health", response_model=HealthCheck, tags=["Health"])
+async def health_check(session: AsyncSession = Depends(get_session)):
+    """
+    Health check endpoint that verifies the API and its dependencies are working.
+    Checks database and Redis connectivity.
+    """
+    try:
+        # Test database connection
+        await session.execute(select(1))
+        db_status = "healthy"
+    except Exception as e:
+        logger.error(f"Database health check failed: {str(e)}")
+        db_status = "unhealthy"
+
+    try:
+        # Test Redis connection using the cache instance
+        await cache.redis.ping()
+        redis_status = "healthy"
+    except Exception as e:
+        logger.error(f"Redis health check failed: {str(e)}")
+        redis_status = "unhealthy"
+
+    # Overall status is healthy only if all components are healthy
+    overall_status = "healthy" if all(status == "healthy" for status in [db_status, redis_status]) else "unhealthy"
+
+    return HealthCheck(
+        status=overall_status,
+        version="1.0.0",  # This should match your app version
+        redis_status=redis_status,
+        database_status=db_status
+    )
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close cache connection on shutdown."""
+    await cache.close()
+
+async def get_api_key(
+    api_key: str,
+    session: AsyncSession = Depends(get_session)
+) -> str:
+    """Validate API key and update last used timestamp."""
+    stmt = select(APIKeyModel).where(APIKeyModel.key == api_key)
+    result = await session.execute(stmt)
+    key_model = result.scalar_one_or_none()
+    
+    if not key_model:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    # Update last used timestamp
+    key_model.last_used = datetime.utcnow()
+    await session.commit()
+    
+    return api_key
+
+@app.get("/", response_class=HTMLResponse, tags=["UI"])
 async def read_root():
+    """Serve the main HTML interface."""
     with open("app/static/index.html") as f:
         return f.read()
 
-@app.get("/api/keys", response_model=List[APIKey])
-async def list_keys():
-    conn = sqlite3.connect('scraper.db')
-    c = conn.cursor()
-    c.execute('SELECT key, name, description, created_at, last_used FROM api_keys')
-    keys = []
-    for row in c.fetchall():
-        keys.append(APIKey(
-            key=row[0],
-            name=row[1],
-            description=row[2],
-            created_at=datetime.fromisoformat(row[3]) if row[3] else datetime.now(),
-            last_used=datetime.fromisoformat(row[4]) if row[4] else None
-        ))
-    conn.close()
-    return keys
+@app.get("/health-ui", response_class=HTMLResponse, tags=["UI"])
+async def health_ui():
+    """Serve the health check UI interface."""
+    with open("app/static/health.html") as f:
+        return f.read()
 
-@app.post("/api/keys", response_model=APIKey)
-async def create_key(request: APIKeyRequest):
-    new_key = APIKey(
+@app.get("/api/keys", response_model=list[APIKey], tags=["API Keys"])
+async def list_keys(session: AsyncSession = Depends(get_session)):
+    """List all API keys."""
+    stmt = select(APIKeyModel)
+    result = await session.execute(stmt)
+    return [
+        APIKey(
+            key=key.key,
+            name=key.name,
+            description=key.description,
+            created_at=key.created_at,
+            last_used=key.last_used
+        )
+        for key in result.scalars()
+    ]
+
+@app.post("/api/keys", response_model=APIKey, tags=["API Keys"])
+async def create_key(
+    request: APIKeyRequest,
+    session: AsyncSession = Depends(get_session)
+):
+    """Create a new API key."""
+    import uuid
+    
+    new_key = APIKeyModel(
         key=str(uuid.uuid4()),
         name=request.name,
         description=request.description,
-        created_at=datetime.now()
+        created_at=datetime.utcnow()
     )
     
-    conn = sqlite3.connect('scraper.db')
-    c = conn.cursor()
-    c.execute(
-        'INSERT INTO api_keys (key, name, description, created_at) VALUES (?, ?, ?, ?)',
-        (new_key.key, new_key.name, new_key.description, new_key.created_at.isoformat())
-    )
-    conn.commit()
-    conn.close()
+    session.add(new_key)
+    await session.commit()
     
-    return new_key
+    return APIKey(
+        key=new_key.key,
+        name=new_key.name,
+        description=new_key.description,
+        created_at=new_key.created_at,
+        last_used=new_key.last_used
+    )
 
-@app.delete("/api/keys/{key}")
-async def delete_key(key: str):
-    conn = sqlite3.connect('scraper.db')
-    c = conn.cursor()
-    c.execute('DELETE FROM api_keys WHERE key = ?', (key,))
-    if c.rowcount == 0:
+@app.delete("/api/keys/{key}", tags=["API Keys"])
+async def delete_key(
+    key: str,
+    session: AsyncSession = Depends(get_session)
+):
+    """Delete an API key."""
+    stmt = select(APIKeyModel).where(APIKeyModel.key == key)
+    result = await session.execute(stmt)
+    key_model = result.scalar_one_or_none()
+    
+    if not key_model:
         raise HTTPException(status_code=404, detail="Key not found")
-    conn.commit()
-    conn.close()
+    
+    await session.delete(key_model)
+    await session.commit()
     return {"message": "Key deleted"}
 
-@app.post("/scrape", response_model=ScrapedData)
-async def scrape_url(request: ScrapeRequest, api_key: str = Depends(get_api_key)):
+@app.post("/scrape", response_model=ScrapedData, tags=["Scraping"])
+async def scrape_url(
+    request: ScrapeRequest,
+    session: AsyncSession = Depends(get_session),
+    api_key: str | None = None,
+    http_request: Request = None
+):
+    """
+    Scrape a webpage with optional JavaScript rendering.
+    Uses Redis cache to avoid re-scraping recently accessed pages.
+    """
+    logger.info(f"Received scrape request for URL: {request.url}")
+    logger.debug(f"Full request data: {request.dict()}")
+    
+    # Check if request is from web UI
+    is_web_ui = http_request and http_request.headers.get("x-webui-token") == "true"
+    
+    # For non-web UI requests, require and validate API key
+    if not is_web_ui:
+        if not api_key:
+            raise HTTPException(
+                status_code=401,
+                detail="API key is required for programmatic access. Please provide your API key in the X-API-Key header."
+            )
+        
+        # Validate API key for programmatic access
+        stmt = select(APIKeyModel).where(APIKeyModel.key == api_key)
+        result = await session.execute(stmt)
+        key_model = result.scalar_one_or_none()
+        
+        if not key_model:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        
+        # Update last used timestamp
+        key_model.last_used = datetime.utcnow()
+        await session.commit()
+    
     try:
-        scraper = Scraper()
-        result = await scraper.scrape_page(str(request.url), request.render_js)
-        await scraper.close()
-        return result
+        url = str(request.url)
+        logger.info(f"Validated URL: {url}")
+        
+        # Try to get from cache first
+        async def scrape_and_store():
+            logger.info("Cache miss - starting scrape operation")
+            scraper = Scraper()
+            try:
+                result = await scraper.scrape_page(url, request.render_js)
+                logger.info("Scrape completed successfully")
+                await scraper.close()
+                
+                # Store in database
+                scraped_data = ScrapedDataModel(
+                    url=url,
+                    title=result.title,
+                    content=result.content,
+                    metadata=json.dumps(result.metadata),
+                    timestamp=datetime.utcnow(),
+                    cached=f"scrape:{url}"
+                )
+                session.add(scraped_data)
+                await session.commit()
+                logger.info("Scrape result stored in database")
+                
+                return result.dict()
+            except Exception as e:
+                logger.error(f"Error during scraping: {str(e)}")
+                raise
+        
+        # Use cache with fallback to scraping
+        try:
+            data = await cache.get_or_set(url, scrape_and_store)
+            return ScrapedData(**data)
+        except Exception as e:
+            logger.error(f"Error in cache operation or scraping: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+            
+    except ValidationError as e:
+        logger.error(f"Validation error: {str(e)}")
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        logger.error(f"Error processing scrape request: {str(e)}")
+        logger.error(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 

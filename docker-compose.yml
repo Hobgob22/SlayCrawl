@@ -8,10 +8,24 @@ services:
     volumes:
       - ./app:/app/app
       - ./requirements.txt:/app/requirements.txt
+      - sqlite_data:/app/data
     env_file:
       - .env
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///data/scraper.db
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=INFO
+      - CACHE_EXPIRY=3600
+      - MAX_CONCURRENT_SCRAPES=10
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   redis:
     image: "redis:alpine"
@@ -19,6 +33,13 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 volumes:
-  redis_data: 
+  redis_data:
+  sqlite_data: 

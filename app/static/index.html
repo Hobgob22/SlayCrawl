@@ -8,6 +8,9 @@
     <style>
         body { padding: 20px; }
         .result { white-space: pre-wrap; }
+        .spinner-border { display: none; }
+        .loading .spinner-border { display: inline-block; }
+        .loading button[type="submit"] { display: none; }
     </style>
 </head>
 <body>
@@ -33,8 +36,14 @@
                     <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" id="renderJs">
                         <label class="form-check-label" for="renderJs">Render JavaScript</label>
+                        <small class="form-text text-muted d-block">Enable for dynamic websites. Note: This may take longer due to anti-bot protection.</small>
                     </div>
-                    <button type="submit" class="btn btn-primary">Scrape</button>
+                    <div class="submit-container">
+                        <button type="submit" class="btn btn-primary">Scrape</button>
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
                 </form>
             </div>
         </div>
@@ -62,17 +71,23 @@
         document.getElementById('scrapeForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            const form = e.target;
             const url = document.getElementById('url').value;
             const renderJs = document.getElementById('renderJs').checked;
             const resultCard = document.getElementById('resultCard');
             const result = document.getElementById('result');
+            
+            // Show loading state
+            form.classList.add('loading');
+            resultCard.classList.add('d-none');
             
             try {
                 const response = await fetch('/scrape', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'accept': 'text/html,application/json'
+                        'Accept': 'application/json',
+                        'X-WebUI-Token': 'true'  // Special header to identify web UI requests
                     },
                     body: JSON.stringify({
                         url: url,
@@ -81,7 +96,8 @@
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
                 }
                 
                 const data = await response.json();
@@ -89,6 +105,9 @@
                 resultCard.classList.remove('d-none');
             } catch (error) {
                 alert('Error: ' + error.message);
+            } finally {
+                // Hide loading state
+                form.classList.remove('loading');
             }
         });
     </script>

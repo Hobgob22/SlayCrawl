@@ -1,11 +1,14 @@
 import httpx
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
+from playwright_stealth import stealth_async  # New import
 from typing import Dict, Optional
 import logging
 from .models import ScrapedData
 import html2text
 import re
+import random
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +37,18 @@ class Scraper:
         page = await browser.new_page()
         
         try:
+            # Apply stealth mode to avoid detection
+            await stealth_async(page)
+            
+            # Auto-dismiss dialogs
+            page.on("dialog", lambda dialog: dialog.dismiss())
+            
             await page.goto(url)
+            
+            # Wait for network to be idle and add small random delay
             await page.wait_for_load_state("networkidle")
+            await page.wait_for_timeout(random.uniform(1000, 3000))  # 1-3 second delay
+            
             content = await page.content()
         finally:
             await browser.close()
