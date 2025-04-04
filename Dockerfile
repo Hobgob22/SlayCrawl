@@ -29,6 +29,9 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
+# Create data directory with proper permissions
+RUN mkdir -p /app/data && chmod 777 /app/data
+
 # Copy requirements first for better caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

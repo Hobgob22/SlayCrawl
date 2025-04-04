@@ -28,10 +28,18 @@ cd SlayCrawl
 docker-compose up -d
 ```
 
+The application will automatically:
+- Create the necessary data directory
+- Initialize the SQLite database with required tables
+- Set up Redis for caching
+- Start the web server
+
 3. Access the web interface:
 - Main UI: http://localhost:8000
 - Health Check UI: http://localhost:8000/health-ui
 - API Documentation: http://localhost:8000/docs
+
+Note: The database (scraper.db) is automatically created on first startup. It's stored in the `data` directory and persists between container restarts. This file is not included in the Git repository for security reasons.
 
 ## Web UI Access
 
