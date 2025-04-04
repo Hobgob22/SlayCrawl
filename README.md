@@ -187,21 +187,3 @@ The application includes a health check system that monitors:
 - Database connection
 
 Visit http://localhost:8000/health-ui to view the health dashboard.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-- 📚 [API Documentation](http://localhost:8000/docs)
-- 🐛 [Issue Tracker](https://github.com/Hobgob22/slaycrawl/issues)
-- 💬 [Discussions](https://github.com/Hobgob22/slaycrawl/discussions) 
