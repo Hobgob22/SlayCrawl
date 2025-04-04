@@ -47,16 +47,29 @@ The web interface is freely accessible without any API key requirements. You can
 
 ## API Access
 
-When using SlayCrawl in your applications or making direct API calls, you'll need to use an API key.
+When using SlayCrawl in your applications or making direct API calls, you'll need to use an API key. The API key system is simple and straightforward:
 
-### Default Admin API Key
+- Any client can create new API keys
+- All API keys have the same level of access
+- API keys are stored securely in the SQLite database
 
-On first startup, SlayCrawl automatically creates a default admin API key. You can find this key in `config/admin_key.txt`. This key has full administrative access and can be used to:
+### Creating API Keys
 
-- Create additional API keys
-- List all API keys
-- Delete API keys
-- Access all scraping features
+You can create a new API key using the `/api/keys` endpoint:
+
+```python
+import requests
+
+response = requests.post('http://localhost:8000/api/keys',
+    json={
+        'name': 'My API Key',
+        'description': 'Key for my application'
+    }
+)
+
+# The response will contain your new API key
+api_key = response.json()['key']
+```
 
 ### Using the API
 
@@ -78,34 +91,23 @@ response = requests.post('http://localhost:8000/scrape',
 )
 ```
 
-### Creating Additional API Keys
+### Managing API Keys
 
-You can create additional API keys using the admin key:
+You can:
+- List all API keys: `GET /api/keys`
+- Create a new key: `POST /api/keys`
+- Delete a key: `DELETE /api/keys/{key}`
 
-```python
-import requests
-
-headers = {
-    'X-API-Key': 'your-admin-key'
-}
-
-response = requests.post('http://localhost:8000/api/keys',
-    headers=headers,
-    json={
-        'name': 'My API Key',
-        'description': 'Key for my application',
-        'role': 'user'
-    }
-)
-```
+Note: The web interface (`http://localhost:8000`) can be used without an API key.
 
 ## Security Notes
 
-1. The default admin key is intended for initial setup and development
+1. API keys are required only for programmatic API access
 2. For production use, it's recommended to:
-   - Create new API keys for each application
-   - Keep the admin key secure
-   - Use user-level API keys for regular operations
+   - Create separate API keys for each application/service
+   - Rotate keys periodically
+   - Delete unused keys
+   - Never share or expose your API keys
 
 ## Configuration
 
