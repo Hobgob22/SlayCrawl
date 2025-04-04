@@ -2,10 +2,17 @@ from redis import asyncio as aioredis
 from typing import Optional, Any, Dict
 import json
 import os
-from datetime import timedelta
+from datetime import timedelta, datetime
 import logging
 
 logger = logging.getLogger(__name__)
+
+class DateTimeEncoder(json.JSONEncoder):
+    """Custom JSON encoder for datetime objects."""
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
 
 class RedisCache:
     """Redis cache manager for the scraping service."""
@@ -50,10 +57,11 @@ class RedisCache:
             bool: True if caching was successful
         """
         try:
+            json_data = json.dumps(data, cls=DateTimeEncoder)
             await self.redis.setex(
                 f"scrape:{key}",
                 expiry or self.default_expiry,
-                json.dumps(data)
+                json_data
             )
             return True
         except Exception as e:
